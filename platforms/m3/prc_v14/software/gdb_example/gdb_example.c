@@ -64,6 +64,7 @@ void handler_ext_int_12(void) __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_13(void) __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_14(void) __attribute__ ((interrupt ("IRQ")));
 
+
 void handler_ext_int_0(void)  { *NVIC_ICPR = (0x1 << 0);  }// TIMER32
 void handler_ext_int_1(void)  { *NVIC_ICPR = (0x1 << 1);  } // TIMER16
 void handler_ext_int_2(void)  { *NVIC_ICPR = (0x1 << 2); mbus_msg_flag = 0x10; } // REG0
@@ -118,7 +119,10 @@ static void operation_init(void){
     exec_count = 0;
     exec_count_irq = 0;
     mbus_msg_flag = 0;
-  
+
+    mbus_enumerate(0x2);
+    mbus_enumerate(0x3);
+
     //Enumeration
 	//delay(MBUS_DELAY);
     //mbus_enumerate(RAD_ADDR);
@@ -139,8 +143,66 @@ static void operation_init(void){
     #warning "ANDREW: FIXME"
 	set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
 	//set_wakeup_timer(1, 0x1, 0x1);
-    operation_sleep();
+    //operation_sleep();
 }
+
+
+
+//*********************************************************
+//
+//*********************************************************
+
+extern volatile int32_t gdb_flag = 0;
+extern volatile int32_t gdb_sp = 0;
+
+extern void handler_svcall(void) __attribute__ ((interrupt ("IRQ")));
+
+//void handler_svcall(void) 
+//{    
+//    __asm volatile ("nop\n");
+//    //mbus_write_message32(0x02<<4,0);
+//    //for (uint32_t i = 0xF; i < 0xF; ++i){
+//    //    mbus_write_message32(i<<4,0);
+//    //}
+//    //Disable MBUS interrupts
+//	////*((volatile uint32_t *) MBCWD_RESET) = 1;
+//
+//    //while (gdb_flag == 0) {}
+//    //mbus_write_message32(0xBB,0);
+//    //gdb_flag = 0;
+//    //asm volatile ( 
+//    //                " gdb_flag = 0x1F00\n"
+//    //                " gdb_sp = 0x1F04\n"
+//    //                "\n"
+//    //                "push {r0, r1, r2, r3, r4, r5, r6, r7}\n"
+//    //                
+//    //                "ldr r0, [pc, #16]\n" // CAUTION: pc-relative load
+//    //                "ldr r1, [r0, #0]\n" // Load gdb_sp
+//    //                "str r13, [r0, #0]\n" // Store current stack pointer to 
+//
+//    //                "ldr r0, [pc, #16]\n" // CAUTION: pc-relative load
+//    //    "svcLoop:    ldr r1, [r0, #0]\n"
+//    //                "cmp r1, #0\n"
+//    //                "beq svcLoop\n"
+//    //                "movs r1, #0\n"
+//    //                "str r1, [r0, #0]\n"
+//    //                "pop {r0,r1,r2,r3, r4, r5, r6, r7}\n"
+//    //                "bx lr\n"
+//    //                ".align 4\n"
+//    //                ".word gdb_flag\n"
+//    //                ".word gdb_sp\n"
+//    //             );
+//}
+
+//extern volatile void gdb_call () 
+//{
+//    //save regs
+//    asm ( "str r0, %[gdb_r0] " : [gdb_r0] "=m" (gdb_r0) );
+//
+//    while (gdb_flag == 0) {}
+//    gdb_flag = 0;
+//
+//}
 
 
 //********************************************************************
@@ -149,39 +211,43 @@ static void operation_init(void){
 
 int main() {
 
-    // Reset Wakeup Timer; This is required for PRCv13
-    //set_wakeup_timer(200, 0, 1);
+    const int emulator = 0;
 
     // Initialize Interrupts
     // Only enable register-related interrupts
-	enable_reg_irq();
+	if (!emulator) enable_reg_irq();
   
-    // Config watchdog timer to about 10 sec; default: 0x02FFFFFF
-    //config_timerwd(TIMERWD_VAL);
+    if (!emulator) {
+        // Initialization sequence
+        if (enumerated != 0xDEADBEEE){
+            // Set up PMU/GOC register in PRC layer (every time)
+            // Enumeration & RAD/SNS layer register configuration
+            operation_init();
+        }
 
-    // Initialization sequence
-    if (enumerated != 0xDEADBEEE){
-        // Set up PMU/GOC register in PRC layer (every time)
-        // Enumeration & RAD/SNS layer register configuration
-        operation_init();
+        set_halt_until_mbus_tx();
+        mbus_write_message32(0xAA,0xABCD1234);
+        delay(MBUS_DELAY);
     }
-
-	set_halt_until_mbus_tx();
-	mbus_write_message32(0xAA,0xABCD1234);
-    delay(MBUS_DELAY);
     
+    mbus_query_devices();
     for (;;){
         uint32_t count;
         for( count=0; count<1000; count++ ){
-            mbus_write_message32(0xAA,count);
+            mbus_write_message32(0xaa,count);
+            __asm volatile ("svc #0"); //handler_svcall();
             delay(MBUS_DELAY);
             delay(MBUS_DELAY);
         }
+        //mbus_write_message32(0xfff,count);
     }
 
-	set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
-    operation_sleep();
+	if (!emulator) {
+        set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
+        operation_sleep();
+    }
 
+    handler_svcall();
 
     while(1);
 
