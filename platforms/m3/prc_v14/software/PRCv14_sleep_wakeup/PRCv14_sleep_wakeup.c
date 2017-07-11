@@ -137,8 +137,9 @@ static void operation_init(void){
 
     // Go to sleep without timer
     #warning "ANDREW: FIXME"
-	//set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
-    //operation_sleep();
+	set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
+	//set_wakeup_timer(1, 0x1, 0x1);
+    operation_sleep();
 }
 
 
