@@ -249,8 +249,16 @@ int main() {
         mbus_write_message32(0xAA,0xABCD1234);
         delay(MBUS_DELAY);
     }
-    
+   
     mbus_query_devices();
+
+    //just to make sure r8 gets used
+    asm volatile (
+        "movs r1,#42\n"
+        "mov  r8,r1\n" 
+        ::: "r1", "r8"
+        );
+
     for (;;){
         uint32_t count;
         for( count=0; count<1000; count++ ){
