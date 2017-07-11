@@ -154,12 +154,46 @@ static void operation_init(void){
 
 extern volatile int32_t gdb_flag = 0;
 extern volatile int32_t gdb_sp = 0;
+void gdb_break(void) __attribute__ ((noinline));
 
-extern void handler_svcall(void) __attribute__ ((interrupt ("IRQ")));
+//  - The Definitive Guide to ARM Cortex-M0 and Cortex-M0+ Processors Section 10.7.1
 
-//void handler_svcall(void) 
-//{    
-//    __asm volatile ("nop\n");
+// SVC handler - main code to handle processing
+// Input parameter is stack frame starting address
+// obtained from assembly wrapper.
+void handler_svcall_main (unsigned int * svc_args)
+{
+    // Stack frame contains:
+    // r0, r1, r2, r3, r12, r14, the return address and xPSR 
+    // - Stacked R0 = svc_args[0]
+    // - Stacked R1 = svc_args[1]
+    // - Stacked R2 = svc_args[2]
+    // - Stacked R3 = svc_args[3]
+    // - Stacked R12 = svc_args[4]
+    // - Stacked LR = svc_args[5]
+    // - Stacked PC = svc_args[6]
+    // - Stacked xPSR= svc_args[7]
+    unsigned int svc_number;
+    svc_number = ((char *)svc_args[6])[-2];
+    switch(svc_number)
+    {
+        case 0: gdb_break();
+                break;
+        //case 1: svc_args[0] = svc_args[0] - svc_args[1];
+        //        break;
+        //case 2: svc_args[0] = svc_args[0] + 1;
+        //        break;
+        default: // Unknown SVC request
+                break;
+    } return;
+}
+
+
+void gdb_break(void)
+{
+    asm volatile ("nop");
+}
+
 //    //mbus_write_message32(0x02<<4,0);
 //    //for (uint32_t i = 0xF; i < 0xF; ++i){
 //    //    mbus_write_message32(i<<4,0);
@@ -239,15 +273,13 @@ int main() {
             delay(MBUS_DELAY);
             delay(MBUS_DELAY);
         }
-        //mbus_write_message32(0xfff,count);
+        mbus_write_message32(0xfff,count);
     }
 
 	if (!emulator) {
         set_wakeup_timer(WAKEUP_PERIOD_CONT, 0x1, 0x1);
         operation_sleep();
     }
-
-    handler_svcall();
 
     while(1);
 
