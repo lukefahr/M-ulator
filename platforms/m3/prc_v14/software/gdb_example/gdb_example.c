@@ -152,32 +152,48 @@ static void operation_init(void){
 //
 //*********************************************************
 
-extern volatile int32_t gdb_flag = 0;
-extern volatile int32_t gdb_sp = 0;
-void gdb_break(void) __attribute__ ((noinline));
+
+
+struct svc_args 
+{
+    //yes this is a wired order, and yes it needs to be this way
+    uint32_t isr_lr;
+    uint32_t sp;  //pre-svc sp
+    uint32_t r8;
+    uint32_t r9;
+    uint32_t r10;
+    uint32_t r11;
+    uint32_t r4;
+    uint32_t r5;
+    uint32_t r6;
+    uint32_t r7;
+    uint32_t r0;
+    uint32_t r1;
+    uint32_t r2;
+    uint32_t r3;
+    uint32_t r12;
+    uint32_t lr;
+    uint32_t pc;
+    uint32_t xPSR;
+};
+
+
+void gdb_write_regs(struct svc_args * regs ) __attribute__ ((noinline));
 
 //  - The Definitive Guide to ARM Cortex-M0 and Cortex-M0+ Processors Section 10.7.1
-
 // SVC handler - main code to handle processing
 // Input parameter is stack frame starting address
 // obtained from assembly wrapper.
-void handler_svcall_main (unsigned int * svc_args)
+void handler_svcall_main (struct svc_args * regs)
 {
-    // Stack frame contains:
-    // r0, r1, r2, r3, r12, r14, the return address and xPSR 
-    // - Stacked R0 = svc_args[0]
-    // - Stacked R1 = svc_args[1]
-    // - Stacked R2 = svc_args[2]
-    // - Stacked R3 = svc_args[3]
-    // - Stacked R12 = svc_args[4]
-    // - Stacked LR = svc_args[5]
-    // - Stacked PC = svc_args[6]
-    // - Stacked xPSR= svc_args[7]
-    unsigned int svc_number;
-    svc_number = ((char *)svc_args[6])[-2];
+    //find pc (which is really npc), back up 2 bytes to get to the 
+    // second half of the previous 16-bit instrction, which contains
+    // the svc_number
+    uint8_t svc_number = ((uint8_t*)(regs->pc))[-2]; 
+
     switch(svc_number)
     {
-        case 0: gdb_break();
+        case 0: gdb_write_regs(regs);
                 break;
         //case 1: svc_args[0] = svc_args[0] - svc_args[1];
         //        break;
@@ -189,55 +205,25 @@ void handler_svcall_main (unsigned int * svc_args)
 }
 
 
-void gdb_break(void)
+void gdb_write_regs( struct svc_args * regs )
 {
-    asm volatile ("nop");
+    mbus_write_message32(0xb0,regs->r0);
+    mbus_write_message32(0xb1,regs->r1);
+    mbus_write_message32(0xb2,regs->r2);
+    mbus_write_message32(0xb3,regs->r3);
+    mbus_write_message32(0xb4,regs->r4);
+    mbus_write_message32(0xb5,regs->r5);
+    mbus_write_message32(0xb6,regs->r6);
+    mbus_write_message32(0xb7,regs->r7);
+    mbus_write_message32(0xb8,regs->r8);
+    mbus_write_message32(0xb9,regs->r9);
+    mbus_write_message32(0xba,regs->r10);
+    mbus_write_message32(0xbb,regs->r11);
+    mbus_write_message32(0xbc,regs->r12);
+    mbus_write_message32(0xbd,regs->sp); 
+    mbus_write_message32(0xbe,regs->lr);
+    mbus_write_message32(0xbf,regs->pc);
 }
-
-//    //mbus_write_message32(0x02<<4,0);
-//    //for (uint32_t i = 0xF; i < 0xF; ++i){
-//    //    mbus_write_message32(i<<4,0);
-//    //}
-//    //Disable MBUS interrupts
-//	////*((volatile uint32_t *) MBCWD_RESET) = 1;
-//
-//    //while (gdb_flag == 0) {}
-//    //mbus_write_message32(0xBB,0);
-//    //gdb_flag = 0;
-//    //asm volatile ( 
-//    //                " gdb_flag = 0x1F00\n"
-//    //                " gdb_sp = 0x1F04\n"
-//    //                "\n"
-//    //                "push {r0, r1, r2, r3, r4, r5, r6, r7}\n"
-//    //                
-//    //                "ldr r0, [pc, #16]\n" // CAUTION: pc-relative load
-//    //                "ldr r1, [r0, #0]\n" // Load gdb_sp
-//    //                "str r13, [r0, #0]\n" // Store current stack pointer to 
-//
-//    //                "ldr r0, [pc, #16]\n" // CAUTION: pc-relative load
-//    //    "svcLoop:    ldr r1, [r0, #0]\n"
-//    //                "cmp r1, #0\n"
-//    //                "beq svcLoop\n"
-//    //                "movs r1, #0\n"
-//    //                "str r1, [r0, #0]\n"
-//    //                "pop {r0,r1,r2,r3, r4, r5, r6, r7}\n"
-//    //                "bx lr\n"
-//    //                ".align 4\n"
-//    //                ".word gdb_flag\n"
-//    //                ".word gdb_sp\n"
-//    //             );
-//}
-
-//extern volatile void gdb_call () 
-//{
-//    //save regs
-//    asm ( "str r0, %[gdb_r0] " : [gdb_r0] "=m" (gdb_r0) );
-//
-//    while (gdb_flag == 0) {}
-//    gdb_flag = 0;
-//
-//}
-
 
 //********************************************************************
 // MAIN function starts here             
@@ -273,7 +259,7 @@ int main() {
             delay(MBUS_DELAY);
             delay(MBUS_DELAY);
         }
-        mbus_write_message32(0xfff,count);
+        //mbus_write_message32(0xfff,count);
     }
 
 	if (!emulator) {
