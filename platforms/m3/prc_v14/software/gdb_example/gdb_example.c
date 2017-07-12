@@ -179,6 +179,7 @@ struct svc_args
 
 
 void gdb_write_regs(struct svc_args * regs ) __attribute__ ((noinline));
+void gdb_break( struct svc_args * regs) __attribute__ ((noinline));
 
 //  - The Definitive Guide to ARM Cortex-M0 and Cortex-M0+ Processors Section 10.7.1
 // SVC handler - main code to handle processing
@@ -193,36 +194,55 @@ void handler_svcall_main (struct svc_args * regs)
 
     switch(svc_number)
     {
-        case 0: gdb_write_regs(regs);
+        case 0: // os-like call 
+                gdb_write_regs(regs);
                 break;
-        //case 1: svc_args[0] = svc_args[0] - svc_args[1];
-        //        break;
+        case 1: //breakpoint-like call
+                //this wasn't a "real" instruction so backup 2 bytes
+                regs->pc -= 2; 
+                //then call breakpoint-like code
+                gdb_break(regs);
+                break;
         //case 2: svc_args[0] = svc_args[0] + 1;
         //        break;
         default: // Unknown SVC request
                 break;
     } return;
+
+
 }
 
 
 void gdb_write_regs( struct svc_args * regs )
 {
-    mbus_write_message32(0xb0,regs->r0);
-    mbus_write_message32(0xb1,regs->r1);
-    mbus_write_message32(0xb2,regs->r2);
-    mbus_write_message32(0xb3,regs->r3);
-    mbus_write_message32(0xb4,regs->r4);
-    mbus_write_message32(0xb5,regs->r5);
-    mbus_write_message32(0xb6,regs->r6);
-    mbus_write_message32(0xb7,regs->r7);
-    mbus_write_message32(0xb8,regs->r8);
-    mbus_write_message32(0xb9,regs->r9);
-    mbus_write_message32(0xba,regs->r10);
-    mbus_write_message32(0xbb,regs->r11);
-    mbus_write_message32(0xbc,regs->r12);
-    mbus_write_message32(0xbd,regs->sp); 
-    mbus_write_message32(0xbe,regs->lr);
-    mbus_write_message32(0xbf,regs->pc);
+    mbus_write_message32(0xe0,regs->r0);
+    mbus_write_message32(0xe1,regs->r1);
+    mbus_write_message32(0xe2,regs->r2);
+    mbus_write_message32(0xe3,regs->r3);
+    mbus_write_message32(0xe4,regs->r4);
+    mbus_write_message32(0xe5,regs->r5);
+    mbus_write_message32(0xe6,regs->r6);
+    mbus_write_message32(0xe7,regs->r7);
+    mbus_write_message32(0xe8,regs->r8);
+    mbus_write_message32(0xe9,regs->r9);
+    mbus_write_message32(0xea,regs->r10);
+    mbus_write_message32(0xeb,regs->r11);
+    mbus_write_message32(0xec,regs->r12);
+    mbus_write_message32(0xed,regs->sp); 
+    mbus_write_message32(0xee,regs->lr);
+    mbus_write_message32(0xef,regs->pc);
+}
+
+
+void gdb_break( struct svc_args * regs)
+{
+    volatile uint32_t gdb_break_flag = 0x0;
+    mbus_write_message32( 0xe0, (uint32_t) &gdb_break_flag);
+    mbus_write_message( 0xe0,  //std debug addr
+                        (uint32_t*) regs, //start at the beginning of the struct
+                        sizeof(struct svc_args)/4 //we want # of 32-bit words
+                      );
+    while (gdb_break_flag != 0x1) {}
 }
 
 //********************************************************************
@@ -263,7 +283,7 @@ int main() {
         uint32_t count;
         for( count=0; count<1000; count++ ){
             mbus_write_message32(0xaa,count);
-            __asm volatile ("svc #0"); //handler_svcall();
+            //__asm volatile ("svc #1"); //handler_svcall();
             delay(MBUS_DELAY);
             delay(MBUS_DELAY);
         }
