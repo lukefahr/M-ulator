@@ -5,18 +5,18 @@
 
 #include "mbus.h"
 
-uint8_t mbus_get_short_prefix(void) {
+uint32_t mbus_get_short_prefix(void) {
 	// TODO: Read from LC
 	return 1;
 }
 
-uint32_t mbus_write_message32(uint8_t addr, uint32_t data) {
+uint32_t mbus_write_message32(uint32_t addr, uint32_t data) {
     uint32_t mbus_addr = 0xA0003000 | (addr << 4);
     *((volatile uint32_t *) mbus_addr) = data;
     return 1;
 }
 
-uint32_t mbus_write_message(uint8_t addr, uint32_t data[], unsigned len) {
+uint32_t mbus_write_message(uint32_t addr, uint32_t data[], unsigned len) {
 	// Goal: Use the "Memory Stream Write" to put unconstrained 32-bit data
 	//       onto the bus.
 	if (len == 0) return 0;
@@ -32,19 +32,24 @@ void mbus_enumerate(unsigned new_prefix) {
     mbus_write_message32(MBUS_DISC_AND_ENUM, ((MBUS_ENUMERATE_CMD << 28) | (new_prefix << 24)));
 }
 
+void mbus_query_devices() 
+{
+    mbus_write_message32(0x0, 0x0);
+}
+
 void mbus_sleep_all(void) {
     mbus_write_message32(MBUS_POWER, MBUS_ALL_SLEEP << 28);
 }
 
-void mbus_sleep_layer_short(uint8_t addr) {
+void mbus_sleep_layer_short(uint32_t addr) {
 	mbus_write_message32(0x01, (0x2<<28) + (0x1<<(addr+12)));
 }
 
 void mbus_copy_registers_from_local_to_remote(
-		uint8_t remote_prefix,
-		uint8_t remote_reg_start,
-		uint8_t local_reg_start,
-		uint8_t length_minus_one
+		uint32_t remote_prefix,
+		uint32_t remote_reg_start,
+		uint32_t local_reg_start,
+		uint32_t length_minus_one
 		) {
 	// Simulate a request from the remote node to read this node
 
@@ -61,14 +66,14 @@ void mbus_copy_registers_from_local_to_remote(
 }
 
 void mbus_copy_registers_from_remote_to_local(
-		uint8_t remote_prefix,
-		uint8_t remote_reg_start,
-		uint8_t local_reg_start,
-		uint8_t length_minus_one
+		uint32_t remote_prefix,
+		uint32_t remote_reg_start,
+		uint32_t local_reg_start,
+		uint32_t length_minus_one
 		) {
 	// Put a register read command on the bus instructed to write this node
 
-	uint8_t address = ((remote_prefix & 0xf) << 4) | MPQ_REG_READ;
+	uint32_t address = ((remote_prefix & 0xf) << 4) | MPQ_REG_READ;
 	uint32_t data = 
         (remote_reg_start << 24) |
 		(length_minus_one << 16) |
@@ -80,11 +85,11 @@ void mbus_copy_registers_from_remote_to_local(
 }
 
 void mbus_copy_registers_from_remote_to_remote(
-		uint8_t source_prefix,
-		uint8_t source_reg_start,
-		uint8_t dest_prefix,
-		uint8_t dest_reg_start,
-		uint8_t length_minus_one
+		uint32_t source_prefix,
+		uint32_t source_reg_start,
+		uint32_t dest_prefix,
+		uint32_t dest_reg_start,
+		uint32_t length_minus_one
 		) {
 	// Put a register read command on the bus instructed to write dest node
 
@@ -100,28 +105,27 @@ void mbus_copy_registers_from_remote_to_remote(
 }
 
 void mbus_remote_register_write(
-		uint8_t prefix,
-		uint8_t dst_reg_addr,
+		uint32_t prefix,
+		uint32_t dst_reg_addr,
 		uint32_t dst_reg_val
 		) {
 	// assert (prefix < 16 && > 0);
-	uint8_t address = ((prefix & 0xf) << 4) | MPQ_REG_WRITE;
+	uint32_t address = ((prefix & 0xf) << 4) | MPQ_REG_WRITE;
 	uint32_t data = (dst_reg_addr << 24) | (dst_reg_val & 0xffffff);
 	mbus_write_message(address, &data, 1);
 }
 
-inline
 void mbus_remote_register_read(
-		uint8_t remote_prefix,
-		uint8_t remote_reg_addr,
-		uint8_t local_reg_addr
+		uint32_t remote_prefix,
+		uint32_t remote_reg_addr,
+		uint32_t local_reg_addr
 		) {
 	mbus_copy_registers_from_remote_to_local(
 			remote_prefix, remote_reg_addr, local_reg_addr, 0);
 }
 
 void mbus_copy_mem_from_local_to_remote_bulk(
-		uint8_t   remote_prefix,
+		uint32_t   remote_prefix,
 		uint32_t* remote_memory_address,
 		uint32_t* local_address,
 		uint32_t  length_in_words_minus_one
@@ -134,9 +138,9 @@ void mbus_copy_mem_from_local_to_remote_bulk(
 }
 
 void mbus_copy_mem_from_remote_to_any_bulk (
-		uint8_t   source_prefix,
+		uint32_t   source_prefix,
 		uint32_t* source_memory_address,
-		uint8_t   destination_prefix,
+		uint32_t   destination_prefix,
 		uint32_t* destination_memory_address,
 		uint32_t  length_in_words_minus_one
 		) {
@@ -149,8 +153,8 @@ void mbus_copy_mem_from_remote_to_any_bulk (
 }
 
 void mbus_copy_mem_from_local_to_remote_stream(
-        uint8_t   stream_channel,
-		uint8_t   remote_prefix,
+        uint32_t   stream_channel,
+		uint32_t   remote_prefix,
 		uint32_t* local_address,
 		uint32_t  length_in_words_minus_one
 		) {
@@ -162,10 +166,10 @@ void mbus_copy_mem_from_local_to_remote_stream(
 }
 
 void mbus_copy_mem_from_remote_to_any_stream (
-        uint8_t   stream_channel,
-		uint8_t   source_prefix,
+        uint32_t   stream_channel,
+		uint32_t   source_prefix,
 		uint32_t* source_memory_address,
-		uint8_t   destination_prefix,
+		uint32_t   destination_prefix,
 		uint32_t  length_in_words_minus_one
 		) {
 

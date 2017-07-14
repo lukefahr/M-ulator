@@ -175,7 +175,7 @@ struct svc_args
     uint32_t lr;
     uint32_t pc;
     uint32_t xPSR;
-};
+}; //18 regs in total
 
 
 void gdb_write_regs(struct svc_args * regs ) __attribute__ ((noinline));
@@ -238,10 +238,12 @@ void gdb_break( struct svc_args * regs)
 {
     volatile uint32_t gdb_break_flag = 0x0;
     mbus_write_message32( 0xe0, (uint32_t) &gdb_break_flag);
-    mbus_write_message( 0xe0,  //std debug addr
-                        (uint32_t*) regs, //start at the beginning of the struct
-                        sizeof(struct svc_args)/4 //we want # of 32-bit words
-                      );
+    mbus_write_message32( 0xe0, (uint32_t) regs);
+
+    //mbus_write_message( 0xe0,  //std debug addr
+    //                    (uint32_t*) regs, //start at the beginning of the struct
+    //                    sizeof(struct svc_args)/4 //we want # of 32-bit words
+    //                  );
     while (gdb_break_flag != 0x1) {}
 }
 
