@@ -57,7 +57,7 @@ void handler_ext_int_5(void)  __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_6(void)  __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_7(void)  __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_8(void)  __attribute__ ((interrupt ("IRQ")));
-void handler_ext_int_9(void)  __attribute__ ((interrupt ("IRQ")));
+//void handler_ext_int_9(void)  __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_10(void) __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_11(void) __attribute__ ((interrupt ("IRQ")));
 void handler_ext_int_12(void) __attribute__ ((interrupt ("IRQ")));
@@ -74,7 +74,7 @@ void handler_ext_int_5(void)  { *NVIC_ICPR = (0x1 << 5); mbus_msg_flag = 0x13; }
 void handler_ext_int_6(void)  { *NVIC_ICPR = (0x1 << 6); mbus_msg_flag = 0x14; } // REG4
 void handler_ext_int_7(void)  { *NVIC_ICPR = (0x1 << 7); mbus_msg_flag = 0x15; } // REG5
 void handler_ext_int_8(void)  { *NVIC_ICPR = (0x1 << 8); mbus_msg_flag = 0x16; } // REG6
-void handler_ext_int_9(void)  { *NVIC_ICPR = (0x1 << 9); mbus_msg_flag = 0x17; } // REG7
+//void handler_ext_int_9(void)  { *NVIC_ICPR = (0x1 << 9); mbus_msg_flag = 0x17; } // REG7
 void handler_ext_int_10(void) { *NVIC_ICPR = (0x1 << 10); } // MEM WR
 void handler_ext_int_11(void) { *NVIC_ICPR = (0x1 << 11); } // MBUS_RX
 void handler_ext_int_12(void) { *NVIC_ICPR = (0x1 << 12); } // MBUS_TX
@@ -178,73 +178,61 @@ struct svc_args
 }; //18 regs in total
 
 
-void gdb_write_regs(struct svc_args * regs ) __attribute__ ((noinline));
-void gdb_break( struct svc_args * regs) __attribute__ ((noinline));
+void handler_gdb_break( struct svc_args * regs) __attribute__ ((noinline));
+void handler_gdb_halt( struct svc_args * regs) __attribute__ ((noinline));
 //could be inlined in the future
 uint32_t gdb_mbus_write_message32(uint32_t addr, uint32_t data) __attribute__ ((noinline)) ;
 
-//  - The Definitive Guide to ARM Cortex-M0 and Cortex-M0+ Processors Section 10.7.1
-// SVC handler - main code to handle processing
-// Input parameter is stack frame starting address
-// obtained from assembly wrapper.
-void handler_svcall_main (struct svc_args * regs)
+/**
+ * traps the handler_ext_int_9
+ */
+void handler_gdb_halt( struct svc_args * regs)
 {
-    //find pc (which is really npc), back up 2 bytes to get to the 
-    // second half of the previous 16-bit instrction, which contains
-    // the svc_number
-    uint8_t svc_number = ((uint8_t*)(regs->pc))[-2]; 
+    volatile uint32_t break_flag = 0x0;
 
-    switch(svc_number)
-    {
-        case 0: // os-like call 
-                gdb_write_regs(regs);
-                break;
-        case 1: //breakpoint-like call
-                //this wasn't a "real" instruction so backup one instruction
-                regs->pc -= 2; 
-                //then call breakpoint-like code
-                gdb_break(regs);
-                break;
-        //case 2: svc_args[0] = svc_args[0] + 1;
-        //        break;
-        default: // Unknown SVC request
-                break;
-    } return;
+    disable_timerwd();
+    *MBCWD_RESET = 1;
 
-
-}
-
-
-void gdb_write_regs( struct svc_args * regs )
-{
-    mbus_write_message32(0xe0,regs->r0);
-    mbus_write_message32(0xe1,regs->r1);
-    mbus_write_message32(0xe2,regs->r2);
-    mbus_write_message32(0xe3,regs->r3);
-    mbus_write_message32(0xe4,regs->r4);
-    mbus_write_message32(0xe5,regs->r5);
-    mbus_write_message32(0xe6,regs->r6);
-    mbus_write_message32(0xe7,regs->r7);
-    mbus_write_message32(0xe8,regs->r8);
-    mbus_write_message32(0xe9,regs->r9);
-    mbus_write_message32(0xea,regs->r10);
-    mbus_write_message32(0xeb,regs->r11);
-    mbus_write_message32(0xec,regs->r12);
-    mbus_write_message32(0xed,regs->sp); 
-    mbus_write_message32(0xee,regs->lr);
-    mbus_write_message32(0xef,regs->pc);
-}
-
-
-void gdb_break( struct svc_args * regs)
-{
-    volatile uint32_t gdb_break_flag = 0x0;
     //broadcast the address of the flag
-    gdb_mbus_write_message32( 0xe0, (uint32_t) &gdb_break_flag);
+    gdb_mbus_write_message32( 0xe0, (uint32_t) &break_flag);
     // and the starting address of the registers
     gdb_mbus_write_message32( 0xe0, (uint32_t) regs);
 
-   while (gdb_break_flag != 0x1) {}
+    while (break_flag != 0x1) {}
+    
+    // oh-right, this is actually IRQ-9
+    //maybe we should clear the interrupt flag
+    *NVIC_ICPR = (0x1 << 9); 
+
+    config_timerwd( *TIMERWD_CNT);
+    *MBCWD_RESET = 0;
+}
+
+/**
+ * traps the handler_svcall 
+ */
+void handler_gdb_break( struct svc_args * regs)
+{
+    //disable watchdog (CPU + MBUS)
+    disable_timerwd();
+    *MBCWD_RESET = 1;
+
+
+    //this wasn't a "real" instruction so backup one instruction
+    regs->pc -= 2; 
+
+    volatile uint32_t break_flag = 0x0;
+
+    //broadcast the address of the flag
+    gdb_mbus_write_message32( 0xe0, (uint32_t) &break_flag);
+    // and the starting address of the registers
+    gdb_mbus_write_message32( 0xe0, (uint32_t) regs);
+
+    while (break_flag != 0x1) {}
+
+    config_timerwd( *TIMERWD_CNT);
+    *MBCWD_RESET = 0;
+ 
 }
 
 //so we can soft-step into mbus_write_message32
